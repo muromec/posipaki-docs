@@ -1,11 +1,16 @@
 {
   "name": "posipaki-docs",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "undocs dev",
-    "build": "undocs build"
+    "build": "bun build.mjs",
+    "dev": "bun --watch build.mjs"
+  },
+  "dependencies": {
+    "markdown-it": "^14.1.0",
+    "vue": "^3.5.13"
   },
   "devDependencies": {
-    "undocs": "latest"
+    "esbuild": "^0.27.0"
   }
 }
