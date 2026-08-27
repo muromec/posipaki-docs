@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://unpkg.com/undocs/schema/config.json
+
+name: posipaki
+shortDescription: Actor processes for JavaScript
+description: Built on generator functions and the message-passing tuple.
+github: muromec/posipaki
