@@ -4,3 +4,5 @@ name: posipaki
 shortDescription: Actor processes for JavaScript
 description: Built on generator functions and the message-passing tuple.
 github: muromec/posipaki
+# Placeholder — finalize at deployment time.
+url: https://posipaki-docs.dev
