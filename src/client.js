@@ -1,7 +1,4 @@
-import { createApp } from "vue";
+import { mountWidgets } from "czaczanka/runtime";
 import { widgets } from "./widgets.js";
 
-for (const el of document.querySelectorAll("[data-demo]")) {
-  const widget = widgets[el.dataset.demo];
-  if (widget) createApp(widget).mount(el);
-}
+mountWidgets(widgets);
