@@ -7,8 +7,8 @@
 - **Processes, not callbacks.** Every actor is a self-contained process with its own state and mailbox.
 - **Fork children.** Spawn sub-actors that report back up, with lifecycle hooks and clean shutdown.
 - **Pause, resume, exit.** Your actor lives and dies on its own terms.
-- **Portable.** The core runs anywhere JavaScript does — browser, service workers, Node, Bun. Subprocess-only features sit behind a separate import.
-- **Distributed.** Spawn children in a different process, a worker, or another runtime over WebSocket.
+- **Portable.** The core runs anywhere JavaScript does — browser, service workers, Node, Bun.
+- **Distributed.** Spawn children in a different process on node, a worker in a browser, or bridge both with WebSocket.
 - **One function.** The whole API is `defineActor`.
 
 ## Install
