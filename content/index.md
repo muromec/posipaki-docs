@@ -9,6 +9,7 @@
 - **Pause, resume, exit.** Your actor lives and dies on its own terms.
 - **Portable.** The core runs anywhere JavaScript does — browser, service workers, Node, Bun.
 - **Distributed.** Spawn children in a different process on node, a worker in a browser, or bridge both with WebSocket.
+- **Bytes and streams.** Send typed arrays, blobs or byte streams over a connection, at the reader's pace.
 - **One function.** The whole API is `defineActor`.
 
 ## Install
