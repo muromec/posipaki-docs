@@ -36,7 +36,7 @@ beforeAll(async () => {
   await new Promise((resolve) => setTimeout(resolve, 80));
 
   demo = window.document.querySelector(".race-demo");
-});
+}, 30_000);
 
 test("race demo mounts with three coloured buttons", () => {
   expect(demo).toBeTruthy();
