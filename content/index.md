@@ -4,12 +4,12 @@
 
 ## Why posipaki
 
-- **One function.** The whole API is `defineActor`.
 - **Processes as a building block.** Every actor is a self-contained process with its own state and mailbox.
-- **Fork children.** Spawn sub-actors that report back up, with lifecycle hooks and clean shutdown.
-- **Pause, resume, exit.** Your actor lives and dies on its own terms.
+- **One function.** The whole API is `defineActor`. Describe received and emitted messages contract and public state with typescript.
+- **Hierarchy.** Spawn sub-actors that report back up, with lifecycle hooks and clean shutdown.
+- **Pause, resume, exit.** Actors have lifecycle of their own, can be suspended or stopped. Exits become events for their parent.
 - **Portable.** The core runs anywhere JavaScript does — browser, service workers, Node, Bun.
-- **Distributed.** Spawn children in a different process on node, a worker in a browser, or bridge both with WebSocket.
+- **Distributed.** Spawn children in a different process on node, a worker in a browser, or bridge both with WebSocket. See companion packages to auto-propagate over ssh and into podman containers, bwrap or different sudo context.
 - **Objects, bytes and streams.** Send typed objects, process referecnes, typed arrays, blobs or byte streams over to remote process.
 
 ## Install
