@@ -6,7 +6,7 @@
       "name": "posipaki-docs",
       "dependencies": {
         "czaczanka": "^0.2.0",
-        "posipaki": "^0.45.1",
+        "posipaki": "^0.46.0",
         "vue": "^3.5.13",
       },
       "devDependencies": {
@@ -131,7 +131,7 @@
 
     "picocolors": ["picocolors@1.1.1", "", {}, "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="],
 
-    "posipaki": ["posipaki@0.45.1", "", {}, "sha512-SHB8kgnYLf93YUsZZ/9ZsSGI9dvtB3MzYtNU0TlfX72yRUJT1FQs8bb/9eHJ5QN8YReE/Ja9EPGWWh5p6yP2sw=="],
+    "posipaki": ["posipaki@0.46.0", "", {}, "sha512-SIJeWerNU3kNn+m1iIxr3OTlOJjMQR0g5SSQ3CtTqCKDU4d0dfuyeILifvtYWB/i+7nTNx7cMKOBIULDldXu6w=="],
 
     "postcss": ["postcss@8.5.26", "", { "dependencies": { "nanoid": "^3.3.17", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ=="],
 
