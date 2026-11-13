@@ -204,6 +204,9 @@ const STYLE = `
 .durable .d-line.records { top: 0; }
 .durable .d-line.requests { bottom: 0; }
 .durable .d-line.left { left: 0; }
+/* A gap where the two halves meet, so a pipe reads as two wires and not one. */
+.durable .d-line.left::before { border-radius: 3px 0 0 3px; right: 6px; }
+.durable .d-line.right::before { border-radius: 0 3px 3px 0; left: 6px; }
 .durable .d-line.right { left: 50%; }
 .durable .d-line.is-slow::before {
   background: repeating-linear-gradient(90deg, #d9a521 0 5px, transparent 5px 10px);
@@ -229,6 +232,9 @@ const STYLE = `
   .durable .d-line.requests { bottom: 0; top: auto; }
   .durable .d-line.left { left: 0; }
   .durable .d-line.right { left: auto; right: 0; }
+  /* Stacked: the halves meet top-to-bottom, so the gap is vertical. */
+  .durable .d-line.left::before { right: 0; bottom: 6px; border-radius: 3px 3px 0 0; }
+  .durable .d-line.right::before { left: 0; top: 6px; border-radius: 0 0 3px 3px; }
   .durable .d-line.is-slow::before {
     background: repeating-linear-gradient(180deg, #d9a521 0 5px, transparent 5px 10px);
   }
@@ -240,10 +246,12 @@ const STYLE = `
   @keyframes d-line-y { from { top: 0; } to { top: calc(100% - 10px); } }
 }
 
+/* The arrow sits at the far end of its half: the end the message is travelling to. */
 .durable .d-line-arrow {
-  position: absolute; left: 14%; top: 50%; transform: translate(-50%, -50%);
+  position: absolute; right: 12%; top: 50%; transform: translate(50%, -50%);
   font-size: 0.8rem; line-height: 1; color: var(--muted, #857c6e);
 }
+.durable .d-line.is-reverse .d-line-arrow { right: auto; left: 12%; transform: translate(-50%, -50%); }
 .durable .d-line-title {
   position: absolute; font-size: 0.58rem; white-space: nowrap; opacity: 0;
   transition: opacity 0.15s ease; color: var(--muted, #857c6e);
@@ -499,7 +507,7 @@ export const DurableDemo = {
           "div",
           { style: { color: "var(--muted, #857c6e)", fontSize: "0.84rem" } },
           ready.value
-            ? "place a figure in an empty box, click a filled one to lift it; two of a figure clear the board. Click a wire to carry, slow or cut it."
+            ? "pick a figure, then click a box to place it there. To clear a box, click it again. Two of one figure clear the whole board. Click a wire to carry, slow or cut it."
             : "starting…",
         ),
       ]);
