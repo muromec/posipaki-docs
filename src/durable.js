@@ -1,9 +1,8 @@
 // ── the durable-actor widget ────────────────────────────────────────────────
 //
-// Three 2×2 boards: the first owns the log, the second follows it and defers, the third follows the second and
-// guesses.  Between them are four wires, because a board talks to the next one in two directions: records travel
-// one way (what the log applied), requests travel the other.  A wire can be carried, slowed or cut, and shows
-// what is inside it while a message is there.
+// One log in the middle with a follower either side — one deferring, one guessing — and four wires: records out
+// from the middle to each follower, requests in from each follower to the middle.  Laid out in a row the wires
+// run across the top and bottom; stacked, they run down the sides.
 //
 // The actors come from `posipaki-durable-actor`; the spec below is the four words the package asks for.
 
@@ -94,13 +93,13 @@ const SLOW_MS = 1400;
 /** How long a carrying wire shows that something went through it, so a fast hop is still visible. */
 const FLASH_MS = 280;
 
-/** One wire: whether it carries, what it is holding, and how much is inside it right now. */
-function makeWire(name, toward = "right") {
+/** One wire: whether it carries, how much is inside it, and which way a message goes. */
+function makeWire(name, toward) {
   const state = ref("up");
   const busy = ref(0);
-  const wire = {
-    toward,
+  return {
     name,
+    toward,
     state,
     busy,
     /** Called when a message enters: the indicator lives while the count is above zero. */
@@ -118,7 +117,6 @@ function makeWire(name, toward = "right") {
       return state.value === "up" ? "carrying" : state.value === "slow" ? "slow" : "cut";
     },
   };
-  return wire;
 }
 
 /** Hand something through a wire: it arrives after the wire's delay, or never if the wire is cut. */
@@ -156,18 +154,18 @@ function wiredChannel(inner, wire) {
   };
 }
 
-/** A process a follower talks to over two wires: its requests go out by one, its answers come back by the other. */
-function wiredAuthority(authority, out, back) {
+/** A process a follower talks to over a wire: its requests go out and its answers come back over it. */
+function wiredAuthority(authority, wire) {
   return {
     get state() {
       return authority.state;
     },
     send(message) {
-      through(out, () => authority.send(message));
+      through(wire, () => authority.send(message));
     },
     subscribe(event, handler) {
       if (event === "state") return authority.subscribe("state", handler);
-      return authority.subscribe("message", (message) => through(back, () => handler(message)));
+      return authority.subscribe("message", (message) => through(wire, () => handler(message)));
     },
   };
 }
@@ -186,21 +184,76 @@ function figureSvg(figure, size = "100%") {
 }
 
 const STYLE = `
-/* The page has its own button styling; everything here is scoped and reset first. */
 .durable { margin: 0; display: flex; flex-direction: column; gap: 0.9rem; }
-.durable button {
-  all: unset; box-sizing: border-box; cursor: pointer; display: block;
-  font: inherit; color: inherit; background: transparent; border: 0; padding: 0; text-align: inherit;
-}
+.durable button { all: unset; box-sizing: border-box; cursor: pointer; font: inherit; color: inherit;
+  background: transparent; border: 0; padding: 0; }
 .durable-bar { display: flex; gap: 0.25rem; flex-wrap: wrap; align-items: center; }
-.durable .durable-pick {
-  width: 44px; height: 44px; padding: 5px;
-  border: 1px solid transparent; border-radius: 10px;
-}
+.durable .durable-pick { width: 44px; height: 44px; padding: 5px; border: 1px solid transparent; border-radius: 10px; }
 .durable .durable-pick:hover { border-color: var(--border, #e6ddcc); }
 .durable .durable-pick.is-picked { border-color: var(--ink, #24201a); background: var(--surface, #fffcf5); }
-.durable-stage { display: flex; flex-direction: column; gap: 0.2rem; }
+
+/* The stage: the boards, and the pipes around them.  In a row the pipes run across the top and bottom; stacked,
+   they run down the sides.  Each pipe is two halves meeting at the middle board, and each half is its own wire. */
+.durable .durable-stage { position: relative; display: flex; flex-direction: column; gap: 0.35rem; padding: 26px 0; }
 @media (min-width: 640px) { .durable .durable-stage { flex-direction: row; align-items: stretch; } }
+.durable .durable-lines { position: absolute; inset: 0; pointer-events: none; }
+.durable .d-line { position: absolute; pointer-events: auto; width: 50%; height: 10px; }
+.durable .d-line::before {
+  content: ""; position: absolute; inset: 3px 0; border-radius: 3px; background: var(--border, #e6ddcc);
+}
+.durable .d-line.records { top: 0; }
+.durable .d-line.requests { bottom: 0; }
+.durable .d-line.left { left: 0; }
+.durable .d-line.right { left: 50%; }
+.durable .d-line.is-slow::before {
+  background: repeating-linear-gradient(90deg, #d9a521 0 5px, transparent 5px 10px);
+}
+.durable .d-line.is-cut::before {
+  background: repeating-linear-gradient(90deg, #d6544a 0 4px, transparent 4px 10px);
+}
+.durable .d-line .d-dot {
+  position: absolute; top: 50%; left: 0; width: 10px; height: 10px; margin-top: -5px;
+  border-radius: 50%; background: var(--ink, #24201a); opacity: 0;
+}
+.durable .d-line.is-busy .d-dot { opacity: 1; animation: d-line-x var(--wire-ms, 900ms) linear infinite; }
+.durable .d-line.is-reverse .d-dot { animation-direction: reverse; }
+.durable .d-line.is-slow.is-busy .d-dot { background: #d9a521; }
+.durable .d-line.is-cut .d-dot { opacity: 0; }
+@keyframes d-line-x { from { left: 0; } to { left: calc(100% - 10px); } }
+
+@media (max-width: 639px) {
+  .durable .durable-stage { padding: 0 26px; }
+  .durable .d-line { width: 10px; height: 50%; }
+  .durable .d-line::before { inset: 0 3px; }
+  .durable .d-line.records { top: 0; bottom: auto; }
+  .durable .d-line.requests { bottom: 0; top: auto; }
+  .durable .d-line.left { left: 0; }
+  .durable .d-line.right { left: auto; right: 0; }
+  .durable .d-line.is-slow::before {
+    background: repeating-linear-gradient(180deg, #d9a521 0 5px, transparent 5px 10px);
+  }
+  .durable .d-line.is-cut::before {
+    background: repeating-linear-gradient(180deg, #d6544a 0 4px, transparent 4px 10px);
+  }
+  .durable .d-line .d-dot { left: 50%; top: 0; margin: 0 0 0 -5px; }
+  .durable .d-line.is-busy .d-dot { animation-name: d-line-y; }
+  @keyframes d-line-y { from { top: 0; } to { top: calc(100% - 10px); } }
+}
+
+.durable .d-line-arrow {
+  position: absolute; left: 14%; top: 50%; transform: translate(-50%, -50%);
+  font-size: 0.8rem; line-height: 1; color: var(--muted, #857c6e);
+}
+.durable .d-line-title {
+  position: absolute; font-size: 0.58rem; white-space: nowrap; opacity: 0;
+  transition: opacity 0.15s ease; color: var(--muted, #857c6e);
+}
+.durable .d-line.records .d-line-title { top: -0.8rem; left: 0.2rem; }
+.durable .d-line.requests .d-line-title { bottom: -0.8rem; left: 0.2rem; }
+.durable .d-line.is-slow .d-line-title, .durable .d-line.is-cut .d-line-title { opacity: 1; }
+.durable .d-line.is-slow .d-line-title, .durable .d-line.is-slow .d-line-arrow { color: #d9a521; }
+.durable .d-line.is-cut .d-line-title, .durable .d-line.is-cut .d-line-arrow { color: #d6544a; }
+
 .durable .durable-board {
   flex: 1; border: 1px solid var(--border, #e6ddcc); border-radius: 12px; padding: 0.6rem;
   background: var(--surface, #fffcf5);
@@ -211,47 +264,10 @@ const STYLE = `
 }
 .durable .durable-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
 .durable .durable-cell {
-  aspect-ratio: 1; display: grid; place-items: center;
-  border: 1px dashed var(--border, #e6ddcc); border-radius: 10px; padding: 8px;
+  aspect-ratio: 1; display: grid; place-items: center; padding: 8px;
+  border: 1px dashed var(--border, #e6ddcc); border-radius: 10px;
 }
 .durable .durable-cell.is-filled { border-style: solid; }
-
-.durable .durable-wires { display: flex; gap: 0.5rem; justify-content: center; align-items: center; padding: 0.6rem 0.2rem; }
-.durable .d-wire { position: relative; width: 16px; height: 54px; }
-@media (min-width: 640px) { .durable .d-wire { height: auto; align-self: stretch; min-height: 110px; } }
-.durable .d-wire::before {
-  content: ""; position: absolute; inset: 0 6px; border-radius: 4px; background: var(--border, #e6ddcc);
-}
-.durable .d-wire.is-slow::before {
-  background: repeating-linear-gradient(180deg, #d9a521 0 4px, transparent 4px 9px);
-}
-.durable .d-wire.is-cut::before {
-  background: repeating-linear-gradient(180deg, #d6544a 0 3px, transparent 3px 9px);
-}
-.durable .d-wire .d-dot {
-  position: absolute; left: 50%; margin-left: -6px; width: 12px; height: 12px; border-radius: 50%;
-  background: var(--ink, #24201a); opacity: 0;
-}
-/* One pass per message: the ball reaches the far end exactly as the message does, and repeats while the wire is
-   still holding something. */
-.durable .d-wire.is-busy .d-dot {
-  opacity: 1; animation: d-travel var(--wire-ms, 900ms) linear infinite;
-}
-.durable .d-wire.is-slow.is-busy .d-dot { background: #d9a521; }
-.durable .d-wire.is-cut .d-dot { opacity: 0; }
-.durable .d-wire-title {
-  position: absolute; left: 50%; transform: translateX(-50%); bottom: -0.9rem;
-  font-size: 0.58rem; color: var(--muted, #857c6e); white-space: nowrap; text-transform: none;
-}
-@keyframes d-travel { from { top: -10px; } to { top: calc(100% + 2px); } }
-.durable .d-arrow {
-  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  font-size: 0.8rem; line-height: 1; color: var(--muted, #857c6e); pointer-events: none;
-}
-.durable .d-wire.is-cut .d-arrow { color: #d6544a; }
-.durable .d-wire.is-leftward .d-dot { animation-name: d-travel-left; }
-.durable .d-wire.is-slow .d-arrow { color: #d9a521; }
-@keyframes d-travel-left { from { top: calc(100% + 2px); } to { top: -10px; } }
 .durable .durable-log {
   margin: 0; padding: 0.6rem 0.75rem; max-height: 9rem; overflow: auto;
   background: var(--code-bg, #2b251d); color: var(--code-ink, #f5efe3);
@@ -296,7 +312,7 @@ export const DurableDemo = {
     const events = ref([]);
     const ready = ref(false);
 
-    /** Four wires, made once so their switches survive a re-attach.  `toward` says which way a message travels. */
+    /** Four wires.  `toward` is the direction a message travels along the pipe. */
     const wires = {
       leftRecords: makeWire("records", "left"),
       leftRequests: makeWire("requests", "right"),
@@ -322,7 +338,7 @@ export const DurableDemo = {
       watching.set(index, [
         proc.subscribe("state", repaint),
         proc.subscribe("message", (said) => {
-          if (said.type === "RECORD_REJECTED") say(`board ${"L-M-R"[index + 1]}: refused — ${said.reason}`);
+          if (said.type === "RECORD_REJECTED") say(`board ${"LMR"[index]}: refused — ${said.reason}`);
         }),
       ]);
       procs[index] = proc;
@@ -334,7 +350,7 @@ export const DurableDemo = {
       if (procs[index] !== undefined) procs[index].send({ type: "STOP" });
       const proc = await which.spawn(
         {
-          authority: wiredAuthority(authority, requests, requests),
+          authority: wiredAuthority(authority, requests),
           snapshot: authority.state?.state ?? null,
           source: wiredChannel(mirrorChannel(authority, shapes), records),
         },
@@ -398,16 +414,19 @@ export const DurableDemo = {
       if (was !== "up" && wire.state.value === "up") void reattach(wire);
     };
 
-    const wireEl = (wire) =>
+    /** One half of one pipe. */
+    const wireEl = (wire, kind, side) =>
       h(
         "button",
         {
           class: [
-            "d-wire",
+            "d-line",
+            kind,
+            side,
             wire.state.value === "slow" ? "is-slow" : "",
             wire.state.value === "cut" ? "is-cut" : "",
             wire.busy.value > 0 ? "is-busy" : "",
-            wire.toward === "left" ? "is-leftward" : "is-rightward",
+            wire.toward === "left" ? "is-reverse" : "",
           ]
             .filter(Boolean)
             .join(" "),
@@ -417,8 +436,8 @@ export const DurableDemo = {
         },
         [
           h("span", { class: "d-dot" }),
-          h("span", { class: "d-arrow" }, wire.toward === "left" ? "←" : "→"),
-          h("span", { class: "d-wire-title" }, wire.label),
+          h("span", { class: "d-line-arrow" }, wire.toward === "left" ? "←" : "→"),
+          h("span", { class: "d-line-title" }, wire.label),
         ],
       );
 
@@ -465,10 +484,14 @@ export const DurableDemo = {
       return h("div", { class: "durable" }, [
         h("div", { class: "durable-bar" }, palette),
         h("div", { class: "durable-stage" }, [
+          h("div", { class: "durable-lines" }, [
+            wireEl(wires.leftRecords, "records", "left"),
+            wireEl(wires.leftRequests, "requests", "left"),
+            wireEl(wires.rightRecords, "records", "right"),
+            wireEl(wires.rightRequests, "requests", "right"),
+          ]),
           board("B — deferred", 0),
-          h("div", { class: "durable-wires" }, [wireEl(wires.leftRecords), wireEl(wires.leftRequests)]),
           board("A — the log", 1),
-          h("div", { class: "durable-wires" }, [wireEl(wires.rightRecords), wireEl(wires.rightRequests)]),
           board("C — optimistic", 2),
         ]),
         h("pre", { class: "durable-log" }, events.value.join("\n")),

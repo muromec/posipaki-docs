@@ -117,7 +117,7 @@ test("mounts three boards, four boxes each, and four wires", () => {
   expect(names).toEqual(["B — deferred", "A — the log", "C — optimistic"]);
   expect(durable.querySelectorAll(".durable-cell").length).toBe(12);
   // Two directions between each pair of boards.
-  expect(durable.querySelectorAll(".d-wire").length).toBe(4);
+  expect(durable.querySelectorAll(".d-line").length).toBe(4);
 });
 
 test("a figure placed on the log board reaches both followers, and the wires show it", async () => {
@@ -130,7 +130,7 @@ test("a figure placed on the log board reaches both followers, and the wires sho
 test("a wire that is cut stops the board behind it", async () => {
   // The second wires group is between the log and the right follower: records first, then requests.  Carrying →
   // slow → cut.
-  const wires = [...durable.querySelectorAll(".d-wire")];
+  const wires = [...durable.querySelectorAll(".d-line")];
   const bcRecords = wires[2];
   bcRecords.click();
   await sleep(20);
@@ -152,7 +152,7 @@ test("a wire that is cut stops the board behind it", async () => {
 });
 
 test("a wire that carries again brings the board behind it up to date", async () => {
-  const wires = [...durable.querySelectorAll(".d-wire")];
+  const wires = [...durable.querySelectorAll(".d-line")];
   const bcRecords = wires[2];
   bcRecords.click(); // cut → carrying
   await sleep(30);
