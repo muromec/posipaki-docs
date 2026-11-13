@@ -364,7 +364,6 @@ export const DurableDemo = {
       const proc = await which.spawn(
         {
           authority: wiredAuthority(authority, requests),
-          snapshot: authority.state?.state ?? null,
           source: wiredChannel(mirrorChannel(authority, shapes), records),
         },
         { name: index === 0 ? "board-left" : "board-right" },
