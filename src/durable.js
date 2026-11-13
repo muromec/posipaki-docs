@@ -95,10 +95,11 @@ const SLOW_MS = 1400;
 const FLASH_MS = 280;
 
 /** One wire: whether it carries, what it is holding, and how much is inside it right now. */
-function makeWire(name) {
+function makeWire(name, toward = "right") {
   const state = ref("up");
   const busy = ref(0);
   const wire = {
+    toward,
     name,
     state,
     busy,
@@ -185,57 +186,73 @@ function figureSvg(figure, size = "100%") {
 }
 
 const STYLE = `
+/* The page has its own button styling; everything here is scoped and reset first. */
 .durable { margin: 0; display: flex; flex-direction: column; gap: 0.9rem; }
+.durable button {
+  all: unset; box-sizing: border-box; cursor: pointer; display: block;
+  font: inherit; color: inherit; background: transparent; border: 0; padding: 0; text-align: inherit;
+}
 .durable-bar { display: flex; gap: 0.25rem; flex-wrap: wrap; align-items: center; }
-.durable-pick {
+.durable .durable-pick {
   width: 44px; height: 44px; padding: 5px;
   border: 1px solid transparent; border-radius: 10px;
-  background: transparent; cursor: pointer;
 }
-.durable-pick:hover { border-color: var(--border, #e6ddcc); }
-.durable-pick.is-picked { border-color: var(--ink, #24201a); background: var(--surface, #fffcf5); }
+.durable .durable-pick:hover { border-color: var(--border, #e6ddcc); }
+.durable .durable-pick.is-picked { border-color: var(--ink, #24201a); background: var(--surface, #fffcf5); }
 .durable-stage { display: flex; flex-direction: column; gap: 0.2rem; }
-@media (min-width: 640px) { .durable-stage { flex-direction: row; align-items: stretch; } }
-.durable-board {
+@media (min-width: 640px) { .durable .durable-stage { flex-direction: row; align-items: stretch; } }
+.durable .durable-board {
   flex: 1; border: 1px solid var(--border, #e6ddcc); border-radius: 12px; padding: 0.6rem;
   background: var(--surface, #fffcf5);
 }
-.durable-name {
+.durable .durable-name {
   font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--muted, #857c6e); margin-bottom: 0.45rem;
 }
-.durable-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
-.durable-cell {
-  aspect-ratio: 1; display: grid; place-items: center; cursor: pointer;
-  border: 1px dashed var(--border, #e6ddcc); border-radius: 10px; background: transparent; padding: 8px;
+.durable .durable-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
+.durable .durable-cell {
+  aspect-ratio: 1; display: grid; place-items: center;
+  border: 1px dashed var(--border, #e6ddcc); border-radius: 10px; padding: 8px;
 }
-.durable-cell.is-filled { border-style: solid; }
+.durable .durable-cell.is-filled { border-style: solid; }
 
-.durable-wires { position: relative; display: flex; gap: 0.5rem; justify-content: center; align-items: center; padding: 0.6rem 0.2rem; }
-.d-wire { position: relative; width: 16px; height: 54px; border: 0; padding: 0; cursor: pointer; background: transparent; }
-@media (min-width: 640px) { .d-wire { height: auto; align-self: stretch; min-height: 110px; } }
-.d-wire::before {
+.durable .durable-wires { display: flex; gap: 0.5rem; justify-content: center; align-items: center; padding: 0.6rem 0.2rem; }
+.durable .d-wire { position: relative; width: 16px; height: 54px; }
+@media (min-width: 640px) { .durable .d-wire { height: auto; align-self: stretch; min-height: 110px; } }
+.durable .d-wire::before {
   content: ""; position: absolute; inset: 0 6px; border-radius: 4px; background: var(--border, #e6ddcc);
 }
-.d-wire.is-slow::before {
+.durable .d-wire.is-slow::before {
   background: repeating-linear-gradient(180deg, #d9a521 0 4px, transparent 4px 9px);
 }
-.d-wire.is-cut::before {
+.durable .d-wire.is-cut::before {
   background: repeating-linear-gradient(180deg, #d6544a 0 3px, transparent 3px 9px);
 }
-.d-wire .d-dot {
-  position: absolute; left: 2px; width: 12px; height: 12px; border-radius: 50%;
+.durable .d-wire .d-dot {
+  position: absolute; left: 50%; margin-left: -6px; width: 12px; height: 12px; border-radius: 50%;
   background: var(--ink, #24201a); opacity: 0;
 }
-.d-wire.is-busy .d-dot { opacity: 1; animation: d-travel 900ms linear infinite; }
-.d-wire.is-slow.is-busy .d-dot { background: #d9a521; animation-duration: 1700ms; }
-.d-wire.is-cut .d-dot { opacity: 0; }
-@keyframes d-travel { from { top: -8px; } to { top: 100%; } }
-.d-wire-title {
-  position: absolute; left: 50%; transform: translateX(-50%); bottom: -0.9rem;
-  font-size: 0.58rem; color: var(--muted, #857c6e); white-space: nowrap;
+/* One pass per message: the ball reaches the far end exactly as the message does, and repeats while the wire is
+   still holding something. */
+.durable .d-wire.is-busy .d-dot {
+  opacity: 1; animation: d-travel var(--wire-ms, 900ms) linear infinite;
 }
-.durable-log {
+.durable .d-wire.is-slow.is-busy .d-dot { background: #d9a521; }
+.durable .d-wire.is-cut .d-dot { opacity: 0; }
+.durable .d-wire-title {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: -0.9rem;
+  font-size: 0.58rem; color: var(--muted, #857c6e); white-space: nowrap; text-transform: none;
+}
+@keyframes d-travel { from { top: -10px; } to { top: calc(100% + 2px); } }
+.durable .d-arrow {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  font-size: 0.8rem; line-height: 1; color: var(--muted, #857c6e); pointer-events: none;
+}
+.durable .d-wire.is-cut .d-arrow { color: #d6544a; }
+.durable .d-wire.is-leftward .d-dot { animation-name: d-travel-left; }
+.durable .d-wire.is-slow .d-arrow { color: #d9a521; }
+@keyframes d-travel-left { from { top: calc(100% + 2px); } to { top: -10px; } }
+.durable .durable-log {
   margin: 0; padding: 0.6rem 0.75rem; max-height: 9rem; overflow: auto;
   background: var(--code-bg, #2b251d); color: var(--code-ink, #f5efe3);
   border-radius: 10px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.76rem;
@@ -266,24 +283,25 @@ function folded(proc) {
 }
 
 const Authority = makeDurableActor(shapes);
-const Follower = makeDurableProxyActor(shapes);
-const Guesser = makeDurableProxyActor(shapes, { mode: "optimistic" });
+const Deferred = makeDurableProxyActor(shapes);
+const Optimistic = makeDurableProxyActor(shapes, { mode: "optimistic" });
 
-/** The widget: three boards, four wires, the figures to place, and what happened. */
+/** The widget: one log in the middle, a follower either side, four wires with a direction each. */
 export const DurableDemo = {
   name: "DurableDemo",
   setup() {
+    /** The boards as they stand: left follower, the log, right follower. */
     const boards = ref([null, null, null]);
     const picked = ref(FIGURES[0]);
     const events = ref([]);
     const ready = ref(false);
 
-    /** The four wires, made once so their switches survive a rebuild. */
+    /** Four wires, made once so their switches survive a re-attach.  `toward` says which way a message travels. */
     const wires = {
-      abRecords: makeWire("records A→B"),
-      abRequests: makeWire("requests B→A"),
-      bcRecords: makeWire("records B→C"),
-      bcRequests: makeWire("requests C→B"),
+      leftRecords: makeWire("records", "left"),
+      leftRequests: makeWire("requests", "right"),
+      rightRecords: makeWire("records", "right"),
+      rightRequests: makeWire("requests", "left"),
     };
     let procs = [];
 
@@ -295,79 +313,64 @@ export const DurableDemo = {
       boards.value = procs.map((proc) => proc.state?.state ?? null);
     };
 
-    /** Build the three processes over a fresh log, with a wire on every hop. */
-    /** The log outlives every process here: a follower is re-attached to it, never a new one made. */
     const log = logChannel([{ type: "CLEAR", at: 0, by: "system" }]);
     let authority = null;
-    /** The subscriptions of a follower, dropped when it is replaced. */
     const watching = new Map();
 
     const watch = (index, proc) => {
       for (const stop of watching.get(index) ?? []) stop();
-      const stops = [
+      watching.set(index, [
         proc.subscribe("state", repaint),
         proc.subscribe("message", (said) => {
-          if (said.type === "RECORD_REJECTED") say(`board ${"ABC"[index]}: refused — ${said.reason}`);
+          if (said.type === "RECORD_REJECTED") say(`board ${"L-M-R"[index + 1]}: refused — ${said.reason}`);
         }),
-      ];
-      watching.set(index, stops);
+      ]);
       procs[index] = proc;
       repaint();
     };
 
-    /** B follows the log, C follows B.  A re-attach takes the state where it finds the board. */
-    const attachB = async () => {
-      if (procs[1] !== undefined) procs[1].send({ type: "STOP" });
-      const b = await Follower.spawn(
+    /** A follower either side of the log: same spec, its own two wires, and the state where it attaches. */
+    const attach = async (index, which, records, requests) => {
+      if (procs[index] !== undefined) procs[index].send({ type: "STOP" });
+      const proc = await which.spawn(
         {
-          authority: wiredAuthority(authority, wires.abRequests, wires.abRequests),
+          authority: wiredAuthority(authority, requests, requests),
           snapshot: authority.state?.state ?? null,
-          source: wiredChannel(mirrorChannel(authority, shapes), wires.abRecords),
+          source: wiredChannel(mirrorChannel(authority, shapes), records),
         },
-        { name: "board-b" },
+        { name: index === 0 ? "board-left" : "board-right" },
       );
-      await folded(b);
-      watch(1, b);
-      return b;
-    };
-
-    const attachC = async (b) => {
-      if (procs[2] !== undefined) procs[2].send({ type: "STOP" });
-      const c = await Guesser.spawn(
-        {
-          authority: wiredAuthority(b, wires.bcRequests, wires.bcRequests),
-          snapshot: b.state?.state ?? null,
-          source: wiredChannel(mirrorChannel(b, shapes), wires.bcRecords),
-        },
-        { name: "board-c" },
-      );
-      await folded(c);
-      watch(2, c);
-      return c;
+      await folded(proc);
+      watch(index, proc);
+      return proc;
     };
 
     const boot = async () => {
-      authority = await Authority.spawn({ source: log }, { name: "board-a" });
+      authority = await Authority.spawn({ source: log }, { name: "board-log" });
       await folded(authority);
-      watch(0, authority);
-      const b = await attachB();
-      await attachC(b);
+      watch(1, authority);
+      await attach(0, Deferred, wires.leftRecords, wires.leftRequests);
+      await attach(2, Optimistic, wires.rightRecords, wires.rightRequests);
       ready.value = true;
     };
 
-    /** A wire that starts carrying again is a link that came back: the boards behind it are re-attached. */
+    /** A wire that carries again is a link that came back: the follower behind it is re-attached. */
     const reattach = async (wire) => {
-      if (wire === wires.abRecords) {
-        const b = await attachB();
-        await attachC(b);
-        say("B and C re-attached from the state they find");
-        return;
+      if (wire === wires.leftRecords || wire === wires.leftRequests) {
+        await attach(0, Deferred, wires.leftRecords, wires.leftRequests);
+        say("the left follower was re-attached from the state it finds");
       }
-      if (wire === wires.bcRecords) {
-        await attachC(procs[1]);
-        say("C re-attached from the state it finds");
+      if (wire === wires.rightRecords || wire === wires.rightRequests) {
+        await attach(2, Optimistic, wires.rightRecords, wires.rightRequests);
+        say("the right follower was re-attached from the state it finds");
       }
     };
+
+    onMounted(async () => {
+      injectStyle();
+      await boot();
+      say("the log is in the middle; a follower either side, one deferring and one guessing");
+    });
 
     /** A click on a box: place the picked figure there, or lift what stands there. */
     const click = (index, cell) => {
@@ -379,7 +382,7 @@ export const DurableDemo = {
         type: "ADD_RECORD",
         requestId: `ask-${Date.now()}-${cell}-${index}`,
         request: {
-          by: `board ${"ABC"[index]}`,
+          by: `board ${"LMR"[index]}`,
           at: Date.now(),
           cell,
           figure: occupied ? null : picked.value,
@@ -387,12 +390,11 @@ export const DurableDemo = {
       });
     };
 
-    /** Carrying → slow → cut → carrying.  Coming back to carrying is a link that returned, so whatever is on the
-     *  far side of it is re-attached from the state it finds. */
+    /** Carrying → slow → cut → carrying; coming back is a link that returned. */
     const cycle = (wire) => {
       const was = wire.state.value;
       wire.cycle();
-      say(`${wire.name}: ${wire.label}`);
+      say(`${wire.name} ${wire.toward === "left" ? "←" : "→"}: ${wire.label}`);
       if (was !== "up" && wire.state.value === "up") void reattach(wire);
     };
 
@@ -405,20 +407,20 @@ export const DurableDemo = {
             wire.state.value === "slow" ? "is-slow" : "",
             wire.state.value === "cut" ? "is-cut" : "",
             wire.busy.value > 0 ? "is-busy" : "",
+            wire.toward === "left" ? "is-leftward" : "is-rightward",
           ]
             .filter(Boolean)
             .join(" "),
-          title: `${wire.name} — ${wire.label} (click to change)`,
+          title: `${wire.name}, ${wire.toward === "left" ? "to the left" : "to the right"} — ${wire.label}`,
+          style: { "--wire-ms": wire.state.value === "slow" ? "1400ms" : "280ms" },
           onClick: () => cycle(wire),
         },
-        [h("span", { class: "d-dot" }), h("span", { class: "d-wire-title" }, wire.label)],
+        [
+          h("span", { class: "d-dot" }),
+          h("span", { class: "d-arrow" }, wire.toward === "left" ? "←" : "→"),
+          h("span", { class: "d-wire-title" }, wire.label),
+        ],
       );
-
-    onMounted(async () => {
-      injectStyle();
-      await boot();
-      say("A owns the log; B defers to it; C follows B and guesses");
-    });
 
     return () => {
       const palette = FIGURES.map((figure) =>
@@ -463,16 +465,16 @@ export const DurableDemo = {
       return h("div", { class: "durable" }, [
         h("div", { class: "durable-bar" }, palette),
         h("div", { class: "durable-stage" }, [
-          board("A — the log", 0),
-          h("div", { class: "durable-wires" }, [wireEl(wires.abRecords), wireEl(wires.abRequests)]),
-          board("B — deferred", 1),
-          h("div", { class: "durable-wires" }, [wireEl(wires.bcRecords), wireEl(wires.bcRequests)]),
+          board("B — deferred", 0),
+          h("div", { class: "durable-wires" }, [wireEl(wires.leftRecords), wireEl(wires.leftRequests)]),
+          board("A — the log", 1),
+          h("div", { class: "durable-wires" }, [wireEl(wires.rightRecords), wireEl(wires.rightRequests)]),
           board("C — optimistic", 2),
         ]),
         h("pre", { class: "durable-log" }, events.value.join("\n")),
         h(
           "div",
-          { class: "hint-inline", style: { color: "var(--muted, #857c6e)", fontSize: "0.84rem" } },
+          { style: { color: "var(--muted, #857c6e)", fontSize: "0.84rem" } },
           ready.value
             ? "place a figure in an empty box, click a filled one to lift it; two of a figure clear the board. Click a wire to carry, slow or cut it."
             : "starting…",

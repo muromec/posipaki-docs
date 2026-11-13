@@ -113,21 +113,22 @@ beforeAll(async () => {
 test("mounts three boards, four boxes each, and four wires", () => {
   expect(durable).toBeTruthy();
   const names = [...durable.querySelectorAll(".durable-name")].map((n) => n.textContent);
-  expect(names).toEqual(["A — the log", "B — deferred", "C — optimistic"]);
+  // The log is in the middle, a follower either side.
+  expect(names).toEqual(["B — deferred", "A — the log", "C — optimistic"]);
   expect(durable.querySelectorAll(".durable-cell").length).toBe(12);
   // Two directions between each pair of boards.
   expect(durable.querySelectorAll(".d-wire").length).toBe(4);
 });
 
 test("a figure placed on the log board reaches both followers, and the wires show it", async () => {
-  boxes()[0].click();
-  // A holds it at once; the records travel over the wires to B and C.
-  await until(() => filled(0, 0), "the log board");
-  await until(() => filled(1, 0), "the deferred follower");
+  // The middle board is the log: a click there is written at once and then travels out over the two record wires.
+  boxes()[4].click();
+  await until(() => filled(1, 0), "the log board");
+  await until(() => filled(0, 0), "the deferred follower");
   await until(() => filled(2, 0), "the optimistic follower");
 });
 test("a wire that is cut stops the board behind it", async () => {
-  // The second wires group is B⇄C: its first wire carries records, its second carries requests.  Carrying →
+  // The second wires group is between the log and the right follower: records first, then requests.  Carrying →
   // slow → cut.
   const wires = [...durable.querySelectorAll(".d-wire")];
   const bcRecords = wires[2];
