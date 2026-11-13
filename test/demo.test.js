@@ -83,43 +83,79 @@ test("messages process one at a time — later colours queue", async () => {
 // guide, so a second import would be a cache hit and mount nothing.
 
 let durable;
+let window;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Wait until a condition holds, or fail naming what never happened. */
+async function until(condition, what, ms = 4000) {
+  for (let waited = 0; waited < ms; waited += 25) {
+    if (condition()) return;
+    await sleep(25);
+  }
+  throw new Error(`${what} did not happen`);
+}
+
+const boxes = () => [...durable.querySelectorAll(".durable-cell")];
+const filled = (index, cell) => boxes()[index * 4 + cell].querySelector("svg") !== null;
 
 beforeAll(async () => {
-  const window = new Window();
+  window = new Window();
   exposeDomGlobals(window);
   window.document.body.innerHTML = '<div id="durable"></div>';
   const { createApp, h } = await import("vue");
   const { DurableDemo } = await import(pathToFileURL(join(root, "src/durable.js")).href);
   createApp({ render: () => h(DurableDemo) }).mount(window.document.querySelector("#durable"));
-  await new Promise((resolve) => setTimeout(resolve, 120));
+  await sleep(200);
   durable = window.document.querySelector(".durable");
 }, 30_000);
 
-test("mounts three boards, four boxes each, and two channels to cut", () => {
+test("mounts three boards, four boxes each, and four wires", () => {
   expect(durable).toBeTruthy();
   const names = [...durable.querySelectorAll(".durable-name")].map((n) => n.textContent);
   expect(names).toEqual(["A — the log", "B — deferred", "C — optimistic"]);
   expect(durable.querySelectorAll(".durable-cell").length).toBe(12);
-  expect(durable.querySelectorAll(".durable-cut").length).toBe(2);
+  // Two directions between each pair of boards.
+  expect(durable.querySelectorAll(".d-wire").length).toBe(4);
 });
 
-test("a figure placed on the log board reaches both followers", async () => {
-  const boxes = () => [...durable.querySelectorAll(".durable-cell")];
+test("a figure placed on the log board reaches both followers, and the wires show it", async () => {
   boxes()[0].click();
-  await new Promise((resolve) => setTimeout(resolve, 120));
-  // Box 0 of each board now holds the red triangle: one drawing per board.
-  for (const at of [0, 4, 8]) expect(boxes()[at].querySelector("svg")).toBeTruthy();
+  // A holds it at once; the records travel over the wires to B and C.
+  await until(() => filled(0, 0), "the log board");
+  await until(() => filled(1, 0), "the deferred follower");
+  await until(() => filled(2, 0), "the optimistic follower");
+});
+test("a wire that is cut stops the board behind it", async () => {
+  // The second wires group is B⇄C: its first wire carries records, its second carries requests.  Carrying →
+  // slow → cut.
+  const wires = [...durable.querySelectorAll(".d-wire")];
+  const bcRecords = wires[2];
+  bcRecords.click();
+  await sleep(20);
+  expect(bcRecords.classList.contains("is-slow")).toBe(true);
+  bcRecords.click();
+  await sleep(20);
+  expect(bcRecords.classList.contains("is-cut")).toBe(true);
+
+  // A figure the board does not hold yet: two of one shape and colour would clear it instead.
+  const palette = [...durable.querySelectorAll(".durable-pick")];
+  palette[1].click();
+  await sleep(20);
+  const before = filled(2, 2);
+  boxes()[2].click();
+  await until(() => filled(1, 2), "the deferred follower");
+  await sleep(400);
+  // The cut one has heard nothing.
+  expect(filled(2, 2)).toBe(before);
 });
 
-test("a cut channel stops the board behind it", async () => {
-  const boxes = () => [...durable.querySelectorAll(".durable-cell")];
-  const cut = [...durable.querySelectorAll(".durable-cut")][1];
-  if (!cut.classList.contains("is-cut")) cut.click();
-  await new Promise((resolve) => setTimeout(resolve, 60));
-  const before = boxes().slice(8).map((box) => box.querySelector("svg") !== null);
-  // Place a figure on the log board while the second channel is cut: the far board hears nothing.
-  boxes()[1].click();
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  const after = boxes().slice(8).map((box) => box.querySelector("svg") !== null);
-  expect(after).toEqual(before);
+test("a wire that carries again brings the board behind it up to date", async () => {
+  const wires = [...durable.querySelectorAll(".d-wire")];
+  const bcRecords = wires[2];
+  bcRecords.click(); // cut → carrying
+  await sleep(30);
+  expect(bcRecords.classList.contains("is-cut")).toBe(false);
+  // The follower is re-attached from the state where it finds the board.
+  await until(() => filled(2, 2), "the re-attached follower");
 });

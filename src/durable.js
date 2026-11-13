@@ -1,7 +1,9 @@
 // ── the durable-actor widget ────────────────────────────────────────────────
 //
 // Three 2×2 boards: the first owns the log, the second follows it and defers, the third follows the second and
-// guesses.  The channels between them can be cut, which is what makes the shape visible.
+// guesses.  Between them are four wires, because a board talks to the next one in two directions: records travel
+// one way (what the log applied), requests travel the other.  A wire can be carried, slowed or cut, and shows
+// what is inside it while a message is there.
 //
 // The actors come from `posipaki-durable-actor`; the spec below is the four words the package asks for.
 
@@ -19,9 +21,10 @@ const FIGURES = [
   { shape: "triangle", colour: "red" },
   { shape: "diamond", colour: "blue" },
   { shape: "circle", colour: "yellow" },
+  { shape: "square", colour: "green" },
 ];
 
-const PAINT = { red: "#d6544a", blue: "#4a82c9", yellow: "#d9a521" };
+const PAINT = { red: "#d6544a", blue: "#4a82c9", yellow: "#d9a521", green: "#3f9a5f" };
 
 /** One board: four boxes, who moved it last, and how many records made it. */
 const EMPTY = () => ({ cells: Array(CELLS).fill(null), by: "", at: 0, moves: 0 });
@@ -84,77 +87,117 @@ const shapes = {
   },
 };
 
-/** A channel that can be cut: while it is, nothing it carries arrives and nothing may be sent. */
-function gateChannel(inner) {
-  const readers = new Set();
-  let cut = false;
-  inner.onFrame((record) => {
-    if (cut) return;
-    for (const reader of readers) reader(record);
-  });
+// ── the wires ───────────────────────────────────────────────────────────────
+
+/** How long a slowed wire holds a message. */
+const SLOW_MS = 1400;
+/** How long a carrying wire shows that something went through it, so a fast hop is still visible. */
+const FLASH_MS = 280;
+
+/** One wire: whether it carries, what it is holding, and how much is inside it right now. */
+function makeWire(name) {
+  const state = ref("up");
+  const busy = ref(0);
+  const wire = {
+    name,
+    state,
+    busy,
+    /** Called when a message enters: the indicator lives while the count is above zero. */
+    enter() {
+      busy.value += 1;
+      return () => {
+        busy.value = Math.max(0, busy.value - 1);
+      };
+    },
+    /** Click: carrying, then slow, then cut, then carrying again. */
+    cycle() {
+      state.value = state.value === "up" ? "slow" : state.value === "slow" ? "cut" : "up";
+    },
+    get label() {
+      return state.value === "up" ? "carrying" : state.value === "slow" ? "slow" : "cut";
+    },
+  };
+  return wire;
+}
+
+/** Hand something through a wire: it arrives after the wire's delay, or never if the wire is cut. */
+function through(wire, deliver) {
+  const release = wire.enter();
+  if (wire.state.value === "cut") {
+    release();
+    return;
+  }
+  setTimeout(
+    () => {
+      deliver();
+      release();
+    },
+    wire.state.value === "slow" ? SLOW_MS : FLASH_MS,
+  );
+}
+
+/** A channel whose frames cross a wire. */
+function wiredChannel(inner, wire) {
   return {
-    channel: {
-      async send(record) {
-        if (cut) throw new Error("the channel is cut");
-        await inner.send(record);
-      },
-      onFrame(handler) {
-        readers.add(handler);
-        return () => readers.delete(handler);
-      },
-      onClose: (handler) => inner.onClose(handler),
-      onError: (handler) => inner.onError(handler),
-      close: (reason) => inner.close(reason),
-      get info() {
-        return inner.info;
-      },
-      control: (command) => inner.control(command),
+    async send(record) {
+      await inner.send(record);
     },
-    cut: () => {
-      cut = true;
+    onFrame(handler) {
+      return inner.onFrame((record) => through(wire, () => handler(record)));
     },
-    heal: () => {
-      cut = false;
+    onClose: (handler) => inner.onClose(handler),
+    onError: (handler) => inner.onError(handler),
+    close: (reason) => inner.close(reason),
+    get info() {
+      return inner.info;
     },
-    get cutNow() {
-      return cut;
+    control: (command) => inner.control(command),
+  };
+}
+
+/** A process a follower talks to over two wires: its requests go out by one, its answers come back by the other. */
+function wiredAuthority(authority, out, back) {
+  return {
+    get state() {
+      return authority.state;
+    },
+    send(message) {
+      through(out, () => authority.send(message));
+    },
+    subscribe(event, handler) {
+      if (event === "state") return authority.subscribe("state", handler);
+      return authority.subscribe("message", (message) => through(back, () => handler(message)));
     },
   };
 }
 
-const Authority = makeDurableActor(shapes);
-const Follower = makeDurableProxyActor(shapes);
-const Guesser = makeDurableProxyActor(shapes, { mode: "optimistic" });
+// ── drawing ─────────────────────────────────────────────────────────────────
 
 function figureSvg(figure, size = "100%") {
   const paint = PAINT[figure.colour];
   const shape = {
-    triangle: h("polygon", { points: "50,14 86,84 14,84", fill: paint }),
-    diamond: h("polygon", { points: "50,10 88,50 50,90 12,50", fill: paint }),
-    circle: h("circle", { cx: 50, cy: 50, r: 38, fill: paint }),
+    triangle: h("polygon", { points: "50,16 84,82 16,82", fill: paint }),
+    diamond: h("polygon", { points: "50,12 86,50 50,88 14,50", fill: paint }),
+    circle: h("circle", { cx: 50, cy: 50, r: 34, fill: paint }),
+    square: h("rect", { x: 18, y: 18, width: 64, height: 64, rx: 6, fill: paint }),
   }[figure.shape];
   return h("svg", { viewBox: "0 0 100 100", style: { width: size, height: size } }, [shape]);
 }
 
 const STYLE = `
 .durable { margin: 0; display: flex; flex-direction: column; gap: 0.9rem; }
-.durable-bar { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.durable-bar { display: flex; gap: 0.25rem; flex-wrap: wrap; align-items: center; }
 .durable-pick {
-  width: 40px; height: 40px; padding: 5px;
-  border: 1px solid var(--border, #e6ddcc); border-radius: 10px;
-  background: var(--surface, #fffcf5); cursor: pointer;
+  width: 44px; height: 44px; padding: 5px;
+  border: 1px solid transparent; border-radius: 10px;
+  background: transparent; cursor: pointer;
 }
-.durable-pick.is-picked { border-color: var(--ink, #24201a); box-shadow: inset 0 0 0 2px var(--ink, #24201a); }
-.durable-cut {
-  padding: 0.3rem 0.7rem; border-radius: 999px;
-  border: 1px solid var(--border, #e6ddcc); background: var(--surface, #fffcf5);
-  color: var(--ink, #24201a); font-size: 0.8rem; font-weight: 600; cursor: pointer;
-}
-.durable-cut.is-cut { border-color: #d6544a; color: #d6544a; }
-.durable-boards { display: grid; gap: 0.6rem; grid-template-columns: 1fr; }
-@media (min-width: 620px) { .durable-boards { grid-template-columns: repeat(3, 1fr); } }
+.durable-pick:hover { border-color: var(--border, #e6ddcc); }
+.durable-pick.is-picked { border-color: var(--ink, #24201a); background: var(--surface, #fffcf5); }
+.durable-stage { display: flex; flex-direction: column; gap: 0.2rem; }
+@media (min-width: 640px) { .durable-stage { flex-direction: row; align-items: stretch; } }
 .durable-board {
-  border: 1px solid var(--border, #e6ddcc); border-radius: 12px; padding: 0.6rem;
+  flex: 1; border: 1px solid var(--border, #e6ddcc); border-radius: 12px; padding: 0.6rem;
   background: var(--surface, #fffcf5);
 }
 .durable-name {
@@ -164,9 +207,34 @@ const STYLE = `
 .durable-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
 .durable-cell {
   aspect-ratio: 1; display: grid; place-items: center; cursor: pointer;
-  border: 1px dashed var(--border, #e6ddcc); border-radius: 10px; background: transparent;
+  border: 1px dashed var(--border, #e6ddcc); border-radius: 10px; background: transparent; padding: 8px;
 }
 .durable-cell.is-filled { border-style: solid; }
+
+.durable-wires { position: relative; display: flex; gap: 0.5rem; justify-content: center; align-items: center; padding: 0.6rem 0.2rem; }
+.d-wire { position: relative; width: 16px; height: 54px; border: 0; padding: 0; cursor: pointer; background: transparent; }
+@media (min-width: 640px) { .d-wire { height: auto; align-self: stretch; min-height: 110px; } }
+.d-wire::before {
+  content: ""; position: absolute; inset: 0 6px; border-radius: 4px; background: var(--border, #e6ddcc);
+}
+.d-wire.is-slow::before {
+  background: repeating-linear-gradient(180deg, #d9a521 0 4px, transparent 4px 9px);
+}
+.d-wire.is-cut::before {
+  background: repeating-linear-gradient(180deg, #d6544a 0 3px, transparent 3px 9px);
+}
+.d-wire .d-dot {
+  position: absolute; left: 2px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--ink, #24201a); opacity: 0;
+}
+.d-wire.is-busy .d-dot { opacity: 1; animation: d-travel 900ms linear infinite; }
+.d-wire.is-slow.is-busy .d-dot { background: #d9a521; animation-duration: 1700ms; }
+.d-wire.is-cut .d-dot { opacity: 0; }
+@keyframes d-travel { from { top: -8px; } to { top: 100%; } }
+.d-wire-title {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: -0.9rem;
+  font-size: 0.58rem; color: var(--muted, #857c6e); white-space: nowrap;
+}
 .durable-log {
   margin: 0; padding: 0.6rem 0.75rem; max-height: 9rem; overflow: auto;
   background: var(--code-bg, #2b251d); color: var(--code-ink, #f5efe3);
@@ -185,19 +253,6 @@ function injectStyle() {
   document.head.appendChild(el);
 }
 
-/** The widget: three boards, the figures to place, the channels to cut, and what happened. */
-export const DurableDemo = {
-  name: "DurableDemo",
-  setup() {
-    const boards = ref([null, null, null]);
-    const picked = ref(FIGURES[0]);
-    const cuts = ref([false, false]);
-    const events = ref([]);
-    const ready = ref(false);
-
-    let procs = [];
-    let gates = [];
-
 /** Wait until a process has folded a state: a spawn resolves before its source has been read. */
 function folded(proc) {
   return new Promise((resolve) => {
@@ -210,6 +265,28 @@ function folded(proc) {
   });
 }
 
+const Authority = makeDurableActor(shapes);
+const Follower = makeDurableProxyActor(shapes);
+const Guesser = makeDurableProxyActor(shapes, { mode: "optimistic" });
+
+/** The widget: three boards, four wires, the figures to place, and what happened. */
+export const DurableDemo = {
+  name: "DurableDemo",
+  setup() {
+    const boards = ref([null, null, null]);
+    const picked = ref(FIGURES[0]);
+    const events = ref([]);
+    const ready = ref(false);
+
+    /** The four wires, made once so their switches survive a rebuild. */
+    const wires = {
+      abRecords: makeWire("records A→B"),
+      abRequests: makeWire("requests B→A"),
+      bcRecords: makeWire("records B→C"),
+      bcRequests: makeWire("requests C→B"),
+    };
+    let procs = [];
+
     const say = (line) => {
       events.value = [`${new Date().toLocaleTimeString()}  ${line}`, ...events.value].slice(0, 30);
     };
@@ -218,45 +295,79 @@ function folded(proc) {
       boards.value = procs.map((proc) => proc.state?.state ?? null);
     };
 
-    /** Build the three processes over a fresh log: the log, a deferred follower, an optimistic one. */
-    const build = async () => {
-      const log = logChannel([{ type: "CLEAR", at: 0, by: "system" }]);
-      const a = await Authority.spawn({ source: log }, { name: "board-a" });
-      await folded(a);
-      const ab = gateChannel(mirrorChannel(a, shapes));
+    /** Build the three processes over a fresh log, with a wire on every hop. */
+    /** The log outlives every process here: a follower is re-attached to it, never a new one made. */
+    const log = logChannel([{ type: "CLEAR", at: 0, by: "system" }]);
+    let authority = null;
+    /** The subscriptions of a follower, dropped when it is replaced. */
+    const watching = new Map();
+
+    const watch = (index, proc) => {
+      for (const stop of watching.get(index) ?? []) stop();
+      const stops = [
+        proc.subscribe("state", repaint),
+        proc.subscribe("message", (said) => {
+          if (said.type === "RECORD_REJECTED") say(`board ${"ABC"[index]}: refused — ${said.reason}`);
+        }),
+      ];
+      watching.set(index, stops);
+      procs[index] = proc;
+      repaint();
+    };
+
+    /** B follows the log, C follows B.  A re-attach takes the state where it finds the board. */
+    const attachB = async () => {
+      if (procs[1] !== undefined) procs[1].send({ type: "STOP" });
       const b = await Follower.spawn(
-        { authority: a, snapshot: a.state?.state ?? null, source: ab.channel },
+        {
+          authority: wiredAuthority(authority, wires.abRequests, wires.abRequests),
+          snapshot: authority.state?.state ?? null,
+          source: wiredChannel(mirrorChannel(authority, shapes), wires.abRecords),
+        },
         { name: "board-b" },
       );
-      // A follower attaches to a state: each one is spawned once the process it follows has folded.
       await folded(b);
-      const bc = gateChannel(mirrorChannel(b, shapes));
+      watch(1, b);
+      return b;
+    };
+
+    const attachC = async (b) => {
+      if (procs[2] !== undefined) procs[2].send({ type: "STOP" });
       const c = await Guesser.spawn(
-        { authority: b, snapshot: b.state?.state ?? null, source: bc.channel },
+        {
+          authority: wiredAuthority(b, wires.bcRequests, wires.bcRequests),
+          snapshot: b.state?.state ?? null,
+          source: wiredChannel(mirrorChannel(b, shapes), wires.bcRecords),
+        },
         { name: "board-c" },
       );
       await folded(c);
+      watch(2, c);
+      return c;
+    };
 
-      procs = [a, b, c];
-      gates = [ab, bc];
-      cuts.value = [false, false];
-      procs.forEach((proc, index) => {
-        proc.send({ type: "ATTACH" });
-        proc.subscribe("state", repaint);
-        proc.subscribe("message", (said) => {
-          if (said.type === "REJECTED") say(`board ${"ABC"[index]}: refused — ${said.reason}`);
-          if (said.type === "FAILED") say(`board ${"ABC"[index]}: ${said.reason}`);
-        });
-      });
-      repaint();
+    const boot = async () => {
+      authority = await Authority.spawn({ source: log }, { name: "board-a" });
+      await folded(authority);
+      watch(0, authority);
+      const b = await attachB();
+      await attachC(b);
       ready.value = true;
     };
 
-    onMounted(async () => {
-      injectStyle();
-      await build();
-      say("three boards: A owns the log, B defers to it, C guesses");
-    });
+    /** A wire that starts carrying again is a link that came back: the boards behind it are re-attached. */
+    const reattach = async (wire) => {
+      if (wire === wires.abRecords) {
+        const b = await attachB();
+        await attachC(b);
+        say("B and C re-attached from the state they find");
+        return;
+      }
+      if (wire === wires.bcRecords) {
+        await attachC(procs[1]);
+        say("C re-attached from the state it finds");
+      }
+    };
 
     /** A click on a box: place the picked figure there, or lift what stands there. */
     const click = (index, cell) => {
@@ -265,7 +376,7 @@ function folded(proc) {
       const board = proc.state?.state ?? null;
       const occupied = board !== null && board.cells[cell] !== null;
       proc.send({
-        type: "ASK",
+        type: "ADD_RECORD",
         requestId: `ask-${Date.now()}-${cell}-${index}`,
         request: {
           by: `board ${"ABC"[index]}`,
@@ -276,20 +387,38 @@ function folded(proc) {
       });
     };
 
-    const cut = (index) => {
-      const gate = gates[index];
-      if (gate === undefined) return;
-      if (gate.cutNow) {
-        gate.heal();
-        cuts.value = cuts.value.map((value, at) => (at === index ? false : value));
-        say(`${["A→B", "B→C"][index]} healed — the boards are re-attached from the state they find`);
-        void build();
-        return;
-      }
-      gate.cut();
-      cuts.value = cuts.value.map((value, at) => (at === index ? true : value));
-      say(`${["A→B", "B→C"][index]} cut — everything behind it stops moving`);
+    /** Carrying → slow → cut → carrying.  Coming back to carrying is a link that returned, so whatever is on the
+     *  far side of it is re-attached from the state it finds. */
+    const cycle = (wire) => {
+      const was = wire.state.value;
+      wire.cycle();
+      say(`${wire.name}: ${wire.label}`);
+      if (was !== "up" && wire.state.value === "up") void reattach(wire);
     };
+
+    const wireEl = (wire) =>
+      h(
+        "button",
+        {
+          class: [
+            "d-wire",
+            wire.state.value === "slow" ? "is-slow" : "",
+            wire.state.value === "cut" ? "is-cut" : "",
+            wire.busy.value > 0 ? "is-busy" : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+          title: `${wire.name} — ${wire.label} (click to change)`,
+          onClick: () => cycle(wire),
+        },
+        [h("span", { class: "d-dot" }), h("span", { class: "d-wire-title" }, wire.label)],
+      );
+
+    onMounted(async () => {
+      injectStyle();
+      await boot();
+      say("A owns the log; B defers to it; C follows B and guesses");
+    });
 
     return () => {
       const palette = FIGURES.map((figure) =>
@@ -307,15 +436,7 @@ function folded(proc) {
         ),
       );
 
-      const switches = ["A→B", "B→C"].map((name, index) =>
-        h(
-          "button",
-          { class: "durable-cut" + (cuts.value[index] ? " is-cut" : ""), onClick: () => cut(index) },
-          `${name}: ${cuts.value[index] ? "cut" : "carrying"}`,
-        ),
-      );
-
-      const panels = ["A — the log", "B — deferred", "C — optimistic"].map((name, index) =>
+      const board = (name, index) =>
         h("div", { class: "durable-board" }, [
           h("div", { class: "durable-name" }, name),
           h(
@@ -333,23 +454,27 @@ function folded(proc) {
                       : `box ${cell}, ${figure.colour} ${figure.shape}`,
                   onClick: () => click(index, cell),
                 },
-                figure === null ? [] : [figureSvg(figure, "74%")],
+                figure === null ? [] : [figureSvg(figure)],
               );
             }),
           ),
-        ]),
-      );
+        ]);
 
       return h("div", { class: "durable" }, [
         h("div", { class: "durable-bar" }, palette),
-        h("div", { class: "durable-bar" }, switches),
-        h("div", { class: "durable-boards" }, panels),
+        h("div", { class: "durable-stage" }, [
+          board("A — the log", 0),
+          h("div", { class: "durable-wires" }, [wireEl(wires.abRecords), wireEl(wires.abRequests)]),
+          board("B — deferred", 1),
+          h("div", { class: "durable-wires" }, [wireEl(wires.bcRecords), wireEl(wires.bcRequests)]),
+          board("C — optimistic", 2),
+        ]),
         h("pre", { class: "durable-log" }, events.value.join("\n")),
         h(
           "div",
-          { style: { color: "var(--muted, #857c6e)", fontSize: "0.84rem" } },
+          { class: "hint-inline", style: { color: "var(--muted, #857c6e)", fontSize: "0.84rem" } },
           ready.value
-            ? "place a figure in an empty box; click a filled box to lift it; two of a figure clear the board"
+            ? "place a figure in an empty box, click a filled one to lift it; two of a figure clear the board. Click a wire to carry, slow or cut it."
             : "starting…",
         ),
       ]);
