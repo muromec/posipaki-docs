@@ -46,9 +46,6 @@ const shapes = {
 
   reduce(board, record) {
     const base = board ?? EMPTY();
-    if (record.type === "SET") {
-      return { cells: [...record.cells], by: record.by, at: record.at, moves: base.moves + 1 };
-    }
     if (record.type === "CLEAR") return { ...EMPTY(), by: record.by, at: record.at, moves: base.moves + 1 };
     if (record.type === "LIFT") {
       const cells = [...base.cells];
@@ -73,22 +70,26 @@ const shapes = {
   },
 
   diff(before, after) {
-    // From nothing: the board whole, or a follower could not start where it stands.
+    // From nothing: one PLACE per figure that stands — and a CLEAR when none does, because a follower has to hear
+    // something to know the source has spoken.
     if (before === null) {
-      return { type: "SET", at: after.at, by: after.by, cells: [...after.cells] };
+      const places = after.cells.flatMap((figure, cell) =>
+        figure === null ? [] : [{ type: "PLACE", at: after.at, by: after.by, cell, figure }],
+      );
+      return places.length === 0 ? [{ type: "CLEAR", at: after.at, by: after.by }] : places;
     }
     const empty = after.cells.every((cell) => cell === null);
     const was = before.cells.some((cell) => cell !== null);
-    if (empty && was) return { type: "CLEAR", at: after.at, by: after.by };
+    if (empty && was) return [{ type: "CLEAR", at: after.at, by: after.by }];
     for (let cell = 0; cell < CELLS; cell += 1) {
       const had = before.cells[cell] ?? null;
       const has = after.cells[cell] ?? null;
       if (had === null && has !== null) {
-        return { type: "PLACE", at: after.at, by: after.by, cell, figure: has };
+        return [{ type: "PLACE", at: after.at, by: after.by, cell, figure: has }];
       }
-      if (had !== null && has === null) return { type: "LIFT", at: after.at, by: after.by, cell };
+      if (had !== null && has === null) return [{ type: "LIFT", at: after.at, by: after.by, cell }];
     }
-    return { type: "CLEAR", at: after.at, by: after.by };
+    return [{ type: "CLEAR", at: after.at, by: after.by }];
   },
 };
 
