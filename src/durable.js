@@ -12,6 +12,7 @@ import {
   makeDurableActor,
   makeDurableProxyActor,
   mirrorChannel,
+  requesting,
 } from "posipaki-durable-actor";
 
 const CELLS = 4;
@@ -356,7 +357,7 @@ export const DurableDemo = {
       if (procs[index] !== undefined) procs[index].send({ type: "STOP" });
       const proc = await which.spawn(
         {
-          authority: wiredAuthority(authority, requests),
+          upstream: requesting(wiredAuthority(authority, requests)),
           source: wiredChannel(mirrorChannel(authority, shapes), records),
         },
         { name: index === 0 ? "board-left" : "board-right" },
