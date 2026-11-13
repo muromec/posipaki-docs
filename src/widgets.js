@@ -1,3 +1,4 @@
+import { DurableDemo } from "./durable.js";
 import { h, ref, onMounted, onBeforeUnmount, defineComponent } from "vue";
 import { defineActor } from "posipaki";
 
@@ -184,4 +185,4 @@ const RaceDemo = defineComponent({
   },
 });
 
-export const widgets = { race: RaceDemo };
+export const widgets = { race: RaceDemo, durable: DurableDemo };

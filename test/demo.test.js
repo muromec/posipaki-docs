@@ -76,3 +76,50 @@ test("messages process one at a time — later colours queue", async () => {
   expect(active.textContent).toContain("RED");
   expect(demo.querySelectorAll("svg circle").length).toBe(4);
 });
+
+// ── the durable-actor widget ────────────────────────────────────────────────
+//
+// Mounted on its own rather than through the page: the client script is one module and it has already run for the
+// guide, so a second import would be a cache hit and mount nothing.
+
+let durable;
+
+beforeAll(async () => {
+  const window = new Window();
+  exposeDomGlobals(window);
+  window.document.body.innerHTML = '<div id="durable"></div>';
+  const { createApp, h } = await import("vue");
+  const { DurableDemo } = await import(pathToFileURL(join(root, "src/durable.js")).href);
+  createApp({ render: () => h(DurableDemo) }).mount(window.document.querySelector("#durable"));
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  durable = window.document.querySelector(".durable");
+}, 30_000);
+
+test("mounts three boards, four boxes each, and two channels to cut", () => {
+  expect(durable).toBeTruthy();
+  const names = [...durable.querySelectorAll(".durable-name")].map((n) => n.textContent);
+  expect(names).toEqual(["A — the log", "B — deferred", "C — optimistic"]);
+  expect(durable.querySelectorAll(".durable-cell").length).toBe(12);
+  expect(durable.querySelectorAll(".durable-cut").length).toBe(2);
+});
+
+test("a figure placed on the log board reaches both followers", async () => {
+  const boxes = () => [...durable.querySelectorAll(".durable-cell")];
+  boxes()[0].click();
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  // Box 0 of each board now holds the red triangle: one drawing per board.
+  for (const at of [0, 4, 8]) expect(boxes()[at].querySelector("svg")).toBeTruthy();
+});
+
+test("a cut channel stops the board behind it", async () => {
+  const boxes = () => [...durable.querySelectorAll(".durable-cell")];
+  const cut = [...durable.querySelectorAll(".durable-cut")][1];
+  if (!cut.classList.contains("is-cut")) cut.click();
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  const before = boxes().slice(8).map((box) => box.querySelector("svg") !== null);
+  // Place a figure on the log board while the second channel is cut: the far board hears nothing.
+  boxes()[1].click();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const after = boxes().slice(8).map((box) => box.querySelector("svg") !== null);
+  expect(after).toEqual(before);
+});
