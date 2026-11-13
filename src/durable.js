@@ -17,8 +17,8 @@ import {
 
 const CELLS = 4;
 
-/** The four figures, and the colour each one is drawn in: a presentation choice, not a fact of the board. */
-const FIGURES = ["triangle", "diamond", "circle", "square"];
+/** The four shapes, and the colour each one is drawn in: a presentation choice, not a fact of the board. */
+const SHAPES = ["triangle", "diamond", "circle", "square"];
 
 const PAINT = {
   triangle: "#d6544a",
@@ -30,7 +30,7 @@ const PAINT = {
 /** One board: what stands in each box.  Nothing else — the page has no use for a moment or an author. */
 const EMPTY = () => ({ cells: Array(CELLS).fill(null) });
 
-/** The four words.  A figure goes into an empty box, a filled box gives its figure back, and two of a figure on
+/** The four words.  A shape goes into an empty box, a filled box gives its shape back, and two of a shape on
  *  one board clear it. */
 const shapes = {
   filter(board, ask) {
@@ -60,7 +60,7 @@ const shapes = {
   },
 
   diff(before, after) {
-    // From nothing: one PLACE per figure that stands — and a CLEAR when none does, because a follower has to hear
+    // From nothing: one PLACE per shape that stands — and a CLEAR when none does, because a follower has to hear
     // something to know the source has spoken.
     if (before === null) {
       const places = after.cells.flatMap((shape, cell) =>
@@ -167,7 +167,7 @@ function wiredAuthority(authority, wire) {
 
 // ── drawing ─────────────────────────────────────────────────────────────────
 
-function figureSvg(shape, size = "100%") {
+function shapeSvg(shape, size = "100%") {
   const paint = PAINT[shape];
   const drawn = {
     triangle: h("polygon", { points: "50,16 84,82 16,82", fill: paint }),
@@ -315,7 +315,7 @@ export const DurableDemo = {
   setup() {
     /** The boards as they stand: left follower, the log, right follower. */
     const boards = ref([null, null, null]);
-    const picked = ref(FIGURES[0]);
+    const picked = ref(SHAPES[0]);
     const events = ref([]);
     const ready = ref(false);
 
@@ -336,7 +336,7 @@ export const DurableDemo = {
       boards.value = procs.map((proc) => proc.state?.state ?? null);
     };
 
-    const log = logChannel([{ type: "CLEAR", at: 0, by: "system" }]);
+    const log = logChannel([{ type: "CLEAR" }]);
     let authority = null;
     const watching = new Map();
 
@@ -394,7 +394,7 @@ export const DurableDemo = {
       say("the log is in the middle; a follower either side, one deferring and one guessing");
     });
 
-    /** A click on a box: place the picked figure there, or lift what stands there. */
+    /** A click on a box: place the picked shape there, or lift what stands there. */
     const click = (index, cell) => {
       const proc = procs[index];
       if (proc === undefined) return;
@@ -404,8 +404,6 @@ export const DurableDemo = {
         type: "ADD_RECORD",
         requestId: `ask-${Date.now()}-${cell}-${index}`,
         request: {
-          by: `board ${"LMR"[index]}`,
-          at: Date.now(),
           cell,
           shape: occupied ? null : picked.value,
         },
@@ -448,18 +446,18 @@ export const DurableDemo = {
       );
 
     return () => {
-      const palette = FIGURES.map((figure) =>
+      const palette = SHAPES.map((shape) =>
         h(
           "button",
           {
-            class: "durable-pick" + (picked.value === figure ? " is-picked" : ""),
-            title: figure,
+            class: "durable-pick" + (picked.value === shape ? " is-picked" : ""),
+            title: shape,
             onClick: () => {
-              picked.value = figure;
-              say(`picked the ${figure}`);
+              picked.value = shape;
+              say(`picked the ${shape}`);
             },
           },
-          [figureSvg(figure)],
+          [shapeSvg(shape)],
         ),
       );
 
@@ -470,18 +468,18 @@ export const DurableDemo = {
             "div",
             { class: "durable-grid" },
             Array.from({ length: CELLS }, (_unused, cell) => {
-              const figure = boards.value[index]?.cells?.[cell] ?? null;
+              const shape = boards.value[index]?.cells?.[cell] ?? null;
               return h(
                 "button",
                 {
-                  class: "durable-cell" + (figure === null ? "" : " is-filled"),
+                  class: "durable-cell" + (shape === null ? "" : " is-filled"),
                   title:
-                    figure === null
+                    shape === null
                       ? `box ${cell}, empty`
-                      : `box ${cell}, ${figure}`,
+                      : `box ${cell}, ${shape}`,
                   onClick: () => click(index, cell),
                 },
-                figure === null ? [] : [figureSvg(figure)],
+                shape === null ? [] : [shapeSvg(shape)],
               );
             }),
           ),
@@ -506,7 +504,7 @@ export const DurableDemo = {
           "div",
           { style: { color: "var(--muted, #857c6e)", fontSize: "0.84rem" } },
           ready.value
-            ? "pick a figure, then click a box to place it there. To clear a box, click it again. Two of one figure clear the whole board. Click a wire to carry, slow or cut it."
+            ? "pick a shape, then click a box to place it there. To clear a box, click it again. Two of one shape clear the whole board. Click a wire to carry, slow or cut it."
             : "starting…",
         ),
       ]);

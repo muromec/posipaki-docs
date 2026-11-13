@@ -120,7 +120,7 @@ test("mounts three boards, four boxes each, and four wires", () => {
   expect(durable.querySelectorAll(".d-line").length).toBe(4);
 });
 
-test("a figure placed on the log board reaches both followers, and the wires show it", async () => {
+test("a shape placed on the log board reaches both followers, and the wires show it", async () => {
   // The middle board is the log: a click there is written at once and then travels out over the two record wires.
   boxes()[4].click();
   await until(() => filled(1, 0), "the log board");
@@ -139,7 +139,7 @@ test("a wire that is cut stops the board behind it", async () => {
   await sleep(20);
   expect(bcRecords.classList.contains("is-cut")).toBe(true);
 
-  // A figure the board does not hold yet: two of one shape and colour would clear it instead.
+  // A figure the board does not hold yet: two of one shape would clear it instead.
   const palette = [...durable.querySelectorAll(".durable-pick")];
   palette[1].click();
   await sleep(20);
