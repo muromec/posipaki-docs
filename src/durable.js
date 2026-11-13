@@ -6,7 +6,12 @@
 // The actors come from `posipaki-durable-actor`; the spec below is the four words the package asks for.
 
 import { h, ref, onMounted } from "vue";
-import { authoritative, logChannel, mirrorChannel, proxy } from "posipaki-durable-actor";
+import {
+  logChannel,
+  makeDurableActor,
+  makeDurableProxyActor,
+  mirrorChannel,
+} from "posipaki-durable-actor";
 
 const CELLS = 4;
 
@@ -117,9 +122,9 @@ function gateChannel(inner) {
   };
 }
 
-const Authority = authoritative(shapes);
-const Follower = proxy(shapes);
-const Guesser = proxy(shapes, { mode: "optimistic" });
+const Authority = makeDurableActor(shapes);
+const Follower = makeDurableProxyActor(shapes);
+const Guesser = makeDurableProxyActor(shapes, { mode: "optimistic" });
 
 function figureSvg(figure, size = "100%") {
   const paint = PAINT[figure.colour];
