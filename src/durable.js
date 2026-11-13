@@ -247,6 +247,11 @@ const STYLE = `
 }
 
 /* The arrow sits at the far end of its half: the end the message is travelling to. */
+.durable .d-lines-hint {
+  position: absolute; right: 0; top: -1.5rem; pointer-events: none;
+  font-size: 0.7rem; color: var(--muted, #857c6e);
+}
+@media (max-width: 639px) { .durable .d-lines-hint { top: auto; bottom: -1.5rem; right: auto; left: 0; } }
 .durable .d-line-arrow {
   position: absolute; right: 12%; top: 50%; transform: translate(50%, -50%);
   font-size: 0.8rem; line-height: 1; color: var(--muted, #857c6e);
@@ -492,6 +497,7 @@ export const DurableDemo = {
       return h("div", { class: "durable" }, [
         h("div", { class: "durable-bar" }, palette),
         h("div", { class: "durable-stage" }, [
+          h("div", { class: "d-lines-hint" }, "click a wire: carrying → slow → cut"),
           h("div", { class: "durable-lines" }, [
             wireEl(wires.leftRecords, "records", "left"),
             wireEl(wires.leftRequests, "requests", "left"),
