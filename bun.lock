@@ -6,7 +6,8 @@
       "name": "posipaki-docs",
       "dependencies": {
         "czaczanka": "^0.2.0",
-        "posipaki": "^0.46.0",
+        "posipaki": "0.50.0",
+        "posipaki-durable-actor": "../email-agent/packages/posipaki-durable-actor",
         "vue": "^3.5.13",
       },
       "devDependencies": {
@@ -131,7 +132,9 @@
 
     "picocolors": ["picocolors@1.1.1", "", {}, "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="],
 
-    "posipaki": ["posipaki@0.46.0", "", {}, "sha512-SIJeWerNU3kNn+m1iIxr3OTlOJjMQR0g5SSQ3CtTqCKDU4d0dfuyeILifvtYWB/i+7nTNx7cMKOBIULDldXu6w=="],
+    "posipaki": ["posipaki@0.50.0", "", {}, "sha512-w16r/dEBiuFRM/A7qqJneZP9qE8kGrnO05Yq6h+WJL9a+S0I/lrJWUJrvhVhMcxo/+YxyoQ9BYdgwcGTQspmWQ=="],
+
+    "posipaki-durable-actor": ["posipaki-durable-actor@file:../email-agent/packages/posipaki-durable-actor", { "peerDependencies": { "posipaki": "*" } }],
 
     "postcss": ["postcss@8.5.26", "", { "dependencies": { "nanoid": "^3.3.17", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ=="],
 

@@ -3,224 +3,10 @@
 // Three 2×2 boards: the first owns the log, the second follows it and defers, the third follows the second and
 // guesses.  The channels between them can be cut, which is what makes the shape visible.
 //
-// The shipped implementation is `posipaki-durable-actor` (in the email-agent repository, not yet published), and
-// this widget runs a copy of the same four words: filter, map, reduce, diff.  It is copied rather than imported
-// because this docs tree pins a posipaki that predates `posipaki/port`, which the package needs at run time.
+// The actors come from `posipaki-durable-actor`; the spec below is the four words the package asks for.
 
 import { h, ref, onMounted } from "vue";
-
-// ── the pattern, inlined ────────────────────────────────────────────────────
-
-/** A log, as a channel: what is sent is appended and handed to every reader of it. */
-function logChannel(initial = []) {
-  const records = [...initial];
-  const readers = new Set();
-  return {
-    async send(record) {
-      records.push(record);
-      for (const reader of readers) reader(record);
-    },
-    onFrame(handler) {
-      for (const record of records) handler(record);
-      readers.add(handler);
-      return () => readers.delete(handler);
-    },
-    close() {},
-    get info() {
-      return { records: records.length };
-    },
-  };
-}
-
-/** A record channel derived from a process's state: one record per change, said by `diff`. */
-function mirrorChannel(authority, spec) {
-  const readers = new Set();
-  let known = null;
-  authority.subscribe("state", () => {
-    const now = authority.state ?? null;
-    if (now === null || JSON.stringify(now) === JSON.stringify(known)) return;
-    const record = spec.diff(known, now);
-    known = now;
-    for (const reader of readers) reader(record);
-  });
-  return {
-    async send() {
-      throw new Error("this channel is the authority's");
-    },
-    onFrame(handler) {
-      known = authority.state ?? null;
-      readers.add(handler);
-      return () => readers.delete(handler);
-    },
-    close() {},
-    get info() {
-      return { authority: authority.name };
-    },
-  };
-}
-
-/** An authoritative process: it owns the log, so it may write what it filters. */
-function authoritative(spec, source, name) {
-  const answerers = new Set();
-  const stateListeners = new Set();
-  const awaiting = new Map();
-  let state = null;
-
-  source.onFrame((record) => {
-    try {
-      state = spec.reduce(state, record);
-    } catch {
-      return;
-    }
-    for (const listener of stateListeners) listener();
-    const key = JSON.stringify(record);
-    const id = awaiting.get(key);
-    if (id === undefined) return;
-    awaiting.delete(key);
-    for (const answerer of answerers) answerer({ type: "ACCEPTED", requestId: id });
-  });
-
-  return {
-    name,
-    get state() {
-      return state;
-    },
-    subscribe(event, handler) {
-      const set = event === "state" ? stateListeners : answerers;
-      set.add(handler);
-      return () => set.delete(handler);
-    },
-    send(message) {
-      if (message.type !== "ASK" || state === null) return;
-      const verdict = spec.filter(state, message.request);
-      if ("refuse" in verdict) {
-        for (const answerer of answerers) {
-          answerer({ type: "REJECTED", requestId: message.requestId, reason: verdict.refuse });
-        }
-        return;
-      }
-      const record = spec.map(state, verdict.pass);
-      awaiting.set(JSON.stringify(record), message.requestId);
-      void source.send(record);
-    },
-  };
-}
-
-/** A process that follows another: it reduces the records it is told, and hands requests over. */
-function follower(spec, authority, source, name, mode) {
-  const answerers = new Set();
-  const stateListeners = new Set();
-  const asking = new Map();
-  const guessing = new Map();
-  const guessed = new Set();
-  let state = authority.state ?? null;
-  let next = 1;
-
-  const publish = () => {
-    for (const listener of stateListeners) listener();
-  };
-  const answer = (message) => {
-    for (const answerer of answerers) answerer(message);
-  };
-
-  source.onFrame((record) => {
-    const key = JSON.stringify(record);
-    if (guessed.has(key)) {
-      guessed.delete(key);
-      return;
-    }
-    state = spec.reduce(state, record);
-    publish();
-  });
-
-  authority.subscribe("message", (said) => {
-    const guess = guessing.get(said.requestId);
-    if (guess !== undefined) {
-      guessing.delete(said.requestId);
-      if (said.type === "ACCEPTED") return;
-      // A guess the authority refused: back to what it was, and the caller is told it was only a guess.
-      state = guess.before;
-      publish();
-      guessed.delete(JSON.stringify(guess.record));
-      answer({ type: "FAILED", requestId: guess.callerId, reason: `rolled back: ${said.reason}` });
-      return;
-    }
-    const callerId = asking.get(said.requestId);
-    if (callerId === undefined) return;
-    asking.delete(said.requestId);
-    answer({ ...said, requestId: callerId });
-  });
-
-  return {
-    name,
-    get state() {
-      return state;
-    },
-    subscribe(event, handler) {
-      const set = event === "state" ? stateListeners : answerers;
-      set.add(handler);
-      return () => set.delete(handler);
-    },
-    send(message) {
-      if (message.type !== "ASK") return;
-      const own = `p-${next++}`;
-      if (mode === "optimistic" && state !== null) {
-        const verdict = spec.filter(state, message.request);
-        if ("refuse" in verdict) {
-          answer({ type: "REJECTED", requestId: message.requestId, reason: verdict.refuse });
-          return;
-        }
-        const record = spec.map(state, verdict.pass);
-        const before = state;
-        state = spec.reduce(state, record);
-        publish();
-        answer({ type: "ACCEPTED", requestId: message.requestId });
-        guessed.add(JSON.stringify(record));
-        guessing.set(own, { callerId: message.requestId, record, before });
-      } else {
-        asking.set(own, message.requestId);
-      }
-      authority.send({ type: "ASK", requestId: own, request: message.request });
-    },
-  };
-}
-
-/** A channel that can be cut: while it is, nothing it carries arrives and nothing may be sent. */
-function gateChannel(inner) {
-  const readers = new Set();
-  let cut = false;
-  inner.onFrame((record) => {
-    if (cut) return;
-    for (const reader of readers) reader(record);
-  });
-  return {
-    channel: {
-      async send(record) {
-        if (cut) throw new Error("the channel is cut");
-        await inner.send(record);
-      },
-      onFrame(handler) {
-        readers.add(handler);
-        return () => readers.delete(handler);
-      },
-      close() {},
-      get info() {
-        return inner.info;
-      },
-    },
-    cut: () => {
-      cut = true;
-    },
-    heal: () => {
-      cut = false;
-    },
-    get cutNow() {
-      return cut;
-    },
-  };
-}
-
-// ── the board ───────────────────────────────────────────────────────────────
+import { authoritative, logChannel, mirrorChannel, proxy } from "posipaki-durable-actor";
 
 const CELLS = 4;
 
@@ -243,7 +29,7 @@ const shapes = {
     const taken = board.cells[ask.cell] !== null;
     if (ask.figure === null && !taken) return { refuse: `box ${ask.cell} is empty` };
     if (ask.figure !== null && taken) return { refuse: `box ${ask.cell} is taken` };
-    return { pass: { ...ask, at: Date.now() } };
+    return { pass: true };
   },
 
   map(_board, ask) {
@@ -292,6 +78,48 @@ const shapes = {
     return { type: "CLEAR", at: after.at, by: after.by };
   },
 };
+
+/** A channel that can be cut: while it is, nothing it carries arrives and nothing may be sent. */
+function gateChannel(inner) {
+  const readers = new Set();
+  let cut = false;
+  inner.onFrame((record) => {
+    if (cut) return;
+    for (const reader of readers) reader(record);
+  });
+  return {
+    channel: {
+      async send(record) {
+        if (cut) throw new Error("the channel is cut");
+        await inner.send(record);
+      },
+      onFrame(handler) {
+        readers.add(handler);
+        return () => readers.delete(handler);
+      },
+      onClose: (handler) => inner.onClose(handler),
+      onError: (handler) => inner.onError(handler),
+      close: (reason) => inner.close(reason),
+      get info() {
+        return inner.info;
+      },
+      control: (command) => inner.control(command),
+    },
+    cut: () => {
+      cut = true;
+    },
+    heal: () => {
+      cut = false;
+    },
+    get cutNow() {
+      return cut;
+    },
+  };
+}
+
+const Authority = authoritative(shapes);
+const Follower = proxy(shapes);
+const Guesser = proxy(shapes, { mode: "optimistic" });
 
 function figureSvg(figure, size = "100%") {
   const paint = PAINT[figure.colour];
@@ -365,27 +193,50 @@ export const DurableDemo = {
     let procs = [];
     let gates = [];
 
+/** Wait until a process has folded a state: a spawn resolves before its source has been read. */
+function folded(proc) {
+  return new Promise((resolve) => {
+    if (proc.state?.state != null) return resolve();
+    const stop = proc.subscribe("state", () => {
+      if (proc.state?.state == null) return;
+      stop();
+      resolve();
+    });
+  });
+}
+
     const say = (line) => {
       events.value = [`${new Date().toLocaleTimeString()}  ${line}`, ...events.value].slice(0, 30);
     };
 
     const repaint = () => {
-      boards.value = procs.map((proc) => proc.state ?? null);
+      boards.value = procs.map((proc) => proc.state?.state ?? null);
     };
 
     /** Build the three processes over a fresh log: the log, a deferred follower, an optimistic one. */
-    const build = () => {
+    const build = async () => {
       const log = logChannel([{ type: "CLEAR", at: 0, by: "system" }]);
-      const a = authoritative(shapes, log, "board-a");
+      const a = await Authority.spawn({ source: log }, { name: "board-a" });
+      await folded(a);
       const ab = gateChannel(mirrorChannel(a, shapes));
-      const b = follower(shapes, a, ab.channel, "board-b", "deferred");
+      const b = await Follower.spawn(
+        { authority: a, snapshot: a.state?.state ?? null, source: ab.channel },
+        { name: "board-b" },
+      );
+      // A follower attaches to a state: each one is spawned once the process it follows has folded.
+      await folded(b);
       const bc = gateChannel(mirrorChannel(b, shapes));
-      const c = follower(shapes, b, bc.channel, "board-c", "optimistic");
+      const c = await Guesser.spawn(
+        { authority: b, snapshot: b.state?.state ?? null, source: bc.channel },
+        { name: "board-c" },
+      );
+      await folded(c);
 
       procs = [a, b, c];
       gates = [ab, bc];
       cuts.value = [false, false];
       procs.forEach((proc, index) => {
+        proc.send({ type: "ATTACH" });
         proc.subscribe("state", repaint);
         proc.subscribe("message", (said) => {
           if (said.type === "REJECTED") say(`board ${"ABC"[index]}: refused — ${said.reason}`);
@@ -396,9 +247,9 @@ export const DurableDemo = {
       ready.value = true;
     };
 
-    onMounted(() => {
+    onMounted(async () => {
       injectStyle();
-      build();
+      await build();
       say("three boards: A owns the log, B defers to it, C guesses");
     });
 
@@ -406,12 +257,17 @@ export const DurableDemo = {
     const click = (index, cell) => {
       const proc = procs[index];
       if (proc === undefined) return;
-      const board = proc.state;
+      const board = proc.state?.state ?? null;
       const occupied = board !== null && board.cells[cell] !== null;
       proc.send({
         type: "ASK",
         requestId: `ask-${Date.now()}-${cell}-${index}`,
-        request: { by: `board ${"ABC"[index]}`, cell, figure: occupied ? null : picked.value },
+        request: {
+          by: `board ${"ABC"[index]}`,
+          at: Date.now(),
+          cell,
+          figure: occupied ? null : picked.value,
+        },
       });
     };
 
@@ -422,7 +278,7 @@ export const DurableDemo = {
         gate.heal();
         cuts.value = cuts.value.map((value, at) => (at === index ? false : value));
         say(`${["A→B", "B→C"][index]} healed — the boards are re-attached from the state they find`);
-        build();
+        void build();
         return;
       }
       gate.cut();
