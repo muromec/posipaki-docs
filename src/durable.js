@@ -358,7 +358,7 @@ export const DurableDemo = {
       const proc = await which.spawn(
         {
           upstream: requesting(wiredAuthority(authority, requests)),
-          source: wiredChannel(mirrorChannel(authority, shapes), records),
+          log: wiredChannel(mirrorChannel(authority, shapes), records),
         },
         { name: index === 0 ? "board-left" : "board-right" },
       );
@@ -368,7 +368,7 @@ export const DurableDemo = {
     };
 
     const boot = async () => {
-      authority = await Authority.spawn({ source: log }, { name: "board-log" });
+      authority = await Authority.spawn({ log }, { name: "board-log" });
       await folded(authority);
       watch(1, authority);
       await attach(0, Deferred, wires.leftRecords, wires.leftRequests);
