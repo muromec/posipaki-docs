@@ -79,6 +79,39 @@ const shapes = {
   },
 };
 
+// ── the log the page keeps ──────────────────────────────────────────────────
+//
+// The log is the thing that lasts: a fold is derived, and derived things are not worth keeping.  What the tab holds
+// in session storage is the records themselves, replayed into a fresh log when the page is opened again — so a
+// reload shows the board that was there, and nothing had to be saved about the boards.
+
+/** Where this tab keeps its log.  Session storage, so it goes when the tab does. */
+const SAVED_LOG = "posipaki-durable-actor:log";
+
+/** A log that starts where the last visit left it, and writes down every record it is given. */
+function reloadableLog() {
+  let held = [{ type: "CLEAR" }];
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(SAVED_LOG) ?? "null");
+    if (Array.isArray(saved) && saved.length > 0) held = saved;
+  } catch {
+    // A half-written or foreign entry is not a reason to refuse to start.
+  }
+  const inner = logChannel(held);
+  return {
+    ...inner,
+    async send(record) {
+      await inner.send(record);
+      held.push(record);
+      try {
+        window.sessionStorage.setItem(SAVED_LOG, JSON.stringify(held));
+      } catch {
+        // Storage refused or full: the demo still works, it just forgets when the tab closes.
+      }
+    },
+  };
+}
+
 // ── the wires ───────────────────────────────────────────────────────────────
 
 /** How long a slowed wire holds a message. */
@@ -86,20 +119,25 @@ const SLOW_MS = 1400;
 /** How long a carrying wire shows that something went through it, so a fast hop is still visible. */
 const FLASH_MS = 280;
 
-/** One wire: whether it carries, how much is inside it, and which way a message goes. */
+/** One wire: whether it carries, how much is inside it, which way a message goes, and what went through it last. */
 function makeWire(name, toward) {
   const state = ref("up");
   const busy = ref(0);
+  /** What the last thing through it was: nothing, an answer taken, or an answer refused. */
+  const tone = ref("");
   return {
     name,
     toward,
     state,
     busy,
+    tone,
     /** Called when a message enters: the indicator lives while the count is above zero. */
-    enter() {
+    enter(why = "") {
       busy.value += 1;
+      tone.value = why;
       return () => {
         busy.value = Math.max(0, busy.value - 1);
+        if (busy.value === 0) tone.value = "";
       };
     },
     /** Click: carrying, then slow, then cut, then carrying again. */
@@ -113,8 +151,8 @@ function makeWire(name, toward) {
 }
 
 /** Hand something through a wire: it arrives after the wire's delay, or never if the wire is cut. */
-function through(wire, deliver) {
-  const release = wire.enter();
+function through(wire, deliver, why = "") {
+  const release = wire.enter(why);
   if (wire.state.value === "cut") {
     release();
     return;
@@ -147,8 +185,31 @@ function wiredChannel(inner, wire) {
   };
 }
 
-/** A process a follower talks to over a wire: its requests go out and its answers come back over it. */
+/**
+ * A process a follower talks to over a wire: its requests go out and its answers come back over it.
+ *
+ * One message is one crossing, however many listeners are behind it: the wire carries the answer once, and every
+ * handler it had when it arrived hears the same one.  A listener added later does not make it cross again.
+ */
 function wiredAuthority(authority, wire) {
+  const handlers = new Set();
+  /** The authority's answers, crossing this wire once each.  Made when the first handler arrives. */
+  let watching = null;
+
+  const listen = () => {
+    if (watching !== null) return;
+    watching = authority.subscribe("message", (message) => {
+      // An answer comes back over the wire the request went out on: green when taken, red when refused.
+      through(
+        wire,
+        () => {
+          for (const handler of handlers) handler(message);
+        },
+        message.type === "RECORD_REJECTED" ? "refused" : "taken",
+      );
+    });
+  };
+
   return {
     get state() {
       return authority.state;
@@ -158,7 +219,14 @@ function wiredAuthority(authority, wire) {
     },
     subscribe(event, handler) {
       if (event === "state") return authority.subscribe("state", handler);
-      return authority.subscribe("message", (message) => through(wire, () => handler(message)));
+      handlers.add(handler);
+      listen();
+      return () => {
+        handlers.delete(handler);
+        if (handlers.size > 0 || watching === null) return;
+        watching();
+        watching = null;
+      };
     },
   };
 }
@@ -213,8 +281,13 @@ const STYLE = `
 .durable .d-line.is-busy .d-dot { opacity: 1; animation: d-line-x var(--wire-ms, 900ms) linear infinite; }
 .durable .d-line.is-reverse .d-dot { animation-direction: reverse; }
 .durable .d-line.is-slow.is-busy .d-dot { background: #d9a521; }
+.durable .d-line.is-ok .d-dot { background: #3f7d4e; }
+.durable .d-line.is-nak .d-dot { background: #d6544a; }
+/* A refusal shakes the wire it came back on, so a "no" is visible after the dot has gone. */
+.durable .d-line.is-nak::before { animation: d-wobble 240ms ease-in-out 2; }
 .durable .d-line.is-cut .d-dot { opacity: 0; }
 @keyframes d-line-x { from { left: 0; } to { left: calc(100% - 10px); } }
+@keyframes d-wobble { 50% { transform: translate(2px, -2px); } }
 
 @media (max-width: 639px) {
   .durable .durable-stage { padding: 0 26px; }
@@ -334,7 +407,8 @@ export const DurableDemo = {
       boards.value = procs.map((proc) => proc.state?.state ?? null);
     };
 
-    const log = logChannel([{ type: "CLEAR" }]);
+    const log = reloadableLog();
+
     let authority = null;
     const watching = new Map();
 
@@ -428,6 +502,8 @@ export const DurableDemo = {
             wire.state.value === "slow" ? "is-slow" : "",
             wire.state.value === "cut" ? "is-cut" : "",
             wire.busy.value > 0 ? "is-busy" : "",
+            wire.tone.value === "taken" ? "is-ok" : "",
+            wire.tone.value === "refused" ? "is-nak" : "",
             wire.toward === "left" ? "is-reverse" : "",
           ]
             .filter(Boolean)

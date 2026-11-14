@@ -160,3 +160,14 @@ test("a wire that carries again brings the board behind it up to date", async ()
   // The follower is re-attached from the state where it finds the board.
   await until(() => filled(2, 2), "the re-attached follower");
 });
+
+test("an answer comes back marked on the wire the request went out on", async () => {
+  const wires = [...durable.querySelectorAll(".d-line")];
+  const leftRequests = wires[1];
+  await until(() => durable.textContent.includes("pick a shape"), "the demo to be ready");
+  // A request on the deferred board: nothing shows until the answer is back, and the answer's crossing is the one
+  // that is marked.  A refusal is marked the same way and wobbles the wire; it needs two requests racing for one
+  // box, which is not something a test can arrange without depending on the race.
+  boxes()[3].click();
+  await until(() => leftRequests.classList.contains("is-ok"), "the answer to come back marked");
+});
